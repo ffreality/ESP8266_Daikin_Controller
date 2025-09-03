@@ -20,5 +20,14 @@ You can install them from Arduino IDE libraries section.</br>
 - If Windows 11 can't see ESP8266 correctly in ``Device Manager``, you have to install this driver. </br>
 Unzip driver, right click device, select update driver, choose driver folder. </br> https://www.silabs.com/software-and-tools/usb-to-uart-bridge-vcp-drivers?tab=downloads
 
+## HARDWARES
+- 1X ESP8266 NodeMCU
+- 1X Dallas DS1820 Temperature Sensor (Pins: GND - DQ - VDD)
+- 1X 5mm 940nm 80 mW IR LED (Red LED in scheme) (Pins: Long leg is (+) and short leg s (- / GRD)
+- 1X S8050 Transistor (Transistor with N sign in scheme) (Pins: Emitter - Base - Collector)
+- 1X 4.7K ohm Resistor
+- 1X Breadboard (I used big one)
+- (Optinal) 1X Female barrel jack for 5V input to ESP8266 for easy usage.
+
 ## INFO ABOUT PHOTO.JPG
 I didn't have correct colored male to male cables for connection. So, they are mixed. In the future I can consider to connect them on perfboard.
