@@ -9,9 +9,9 @@ ESP8266 based Daikin Climate IR Remote Controller and Dallas DS1820 Temprature S
 
 ## LIBRARIES
 You can install them from Arduino IDE libraries section.</br>
-IRremoteESP8266 : https://github.com/crankyoldgit/IRremoteESP8266 </br>
-DallasTemperature : https://github.com/milesburton/Arduino-Temperature-Control-Library </br>
-OneWire : https://www.pjrc.com/teensy/td_libs_OneWire.html </br>
+- IRremoteESP8266 : https://github.com/crankyoldgit/IRremoteESP8266 </br>
+- DallasTemperature : https://github.com/milesburton/Arduino-Temperature-Control-Library </br>
+- OneWire : https://www.pjrc.com/teensy/td_libs_OneWire.html </br>
 
 ## ARDUINO IDE ESP8266 INSTALLATION
 - Add this to ``Arduino IDE / File / Preferences / Additional Boards Manager URLs`` ``http://arduino.esp8266.com/stable/package_esp8266com_index.json``
