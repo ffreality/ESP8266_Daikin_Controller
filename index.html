@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Daikin AC Control</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; text-align: center; background-color: black; color: white; }
+    button { background-color: #4CAF50; border: none; color: white; padding: 15px 32px; margin: 10px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; border-radius: 8px; }
+    .off { background-color: #f44336; }
+    .temp { background-color: #008CBA; }
+    .refresh { background-color: #FF9800; }
+    .clear { background-color: #9C27B0; }
+    .sensor { font-size: 1.2em; font-weight: bold; margin: 20px 0; padding: 10px; background-color: #333; border-radius: 5px; color: #fff; }
+    .error { color: #ff6b6b; }
+    .notification { background-color: #2196F3; color: white; padding: 10px; margin: 10px 0; border-radius: 5px; }
+    select { padding: 10px; font-size: 16px; border-radius: 8px; background-color: #008CBA; color: white; margin: 10px; border: none; cursor: pointer; }
+    select:focus { outline: none; }
+    .temp-control, .fan-control, .timer-control { margin: 15px 0; }
+  </style>
+</head>
+<body>
+  <h1>Daikin AC Control</h1>
+
+  <div id="notification" class="notification">Example Notification</div>
+
+  <div class="sensor">Room Temperature: <span id="roomTemp">25.3°C</span></div>
+
+  <button class="refresh">Refresh Temperature</button><br>
+  <p>AC Status: ON</p>
+  <p>Set Temperature: 24°C</p>
+  <button>Turn ON</button>
+  <button class="off">Turn OFF</button><br>
+
+  <!-- Temperature selection -->
+  <div class="temp-control">
+    <label for="tempSelect">Select Temperature: </label>
+    <select id="tempSelect">
+      <option>18°C</option>
+      <option>19°C</option>
+      <option>20°C</option>
+      <option>21°C</option>
+      <option>22°C</option>
+      <option>23°C</option>
+      <option selected>24°C</option>
+      <option>25°C</option>
+      <option>26°C</option>
+      <option>27°C</option>
+      <option>28°C</option>
+    </select>
+  </div>
+
+  <!-- Fan selection -->
+  <div class="fan-control">
+    <label for="fanSelect">Select Fan Speed: </label>
+    <select id="fanSelect">
+      <option>Auto</option>
+      <option>2</option>
+      <option>3</option>
+      <option selected>4</option>
+      <option>5</option>
+      <option>Quiet</option>
+    </select>
+  </div>
+
+  <!-- Timer -->
+  <div class="timer-control">
+    <label for="timerSelect">Auto-Off Timer: </label>
+    <select id="timerSelect">
+      <option>No Timer</option>
+      <option>1 Hour</option>
+      <option selected>2 Hours</option>
+      <option>3 Hours</option>
+      <option>4 Hours</option>
+    </select>
+    <button class="clear">Clear Timer</button>
+    <p id="timerStatus">Timer: 1h 30m remaining</p>
+  </div>
+</body>
+</html>
