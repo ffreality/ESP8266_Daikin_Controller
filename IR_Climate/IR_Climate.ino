@@ -26,7 +26,6 @@ const char* password = "WIFI_PASS";
 const uint16_t kIrLed = D2;  // ESP8266 GPIO4 (D2)
 
 // DS18B20/DS1820 Temperature sensor setup
-// IMPORTANT: Changed to D4 (GPIO2) as in the working example
 #define ONE_WIRE_BUS 2  // D4 (GPIO2)
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
@@ -43,7 +42,6 @@ uint8_t acMode = kDaikinCool;
 // Timer settings
 unsigned long acTimerStart = 0;
 unsigned long acTimerDuration = 0;  // Duration in milliseconds (0 = no timer)
-bool timerChanged = false;  // Flag to indicate timer changes that need feedback
 
 // Initialize the IR sender
 IRDaikinESP ac(kIrLed);
@@ -82,7 +80,6 @@ void setup()
   Wire.begin(OLED_SDA, OLED_SCL);
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
     Serial.println(F("SSD1306 allocation failed"));
-    // Don't proceed, but continue with other initializations
   } else {
     display.clearDisplay();
     display.setTextSize(1);
@@ -156,16 +153,13 @@ void loop()
 }
 
 // Update temperature from the DS1820/DS18B20 sensor
-// Using the simpler approach from the working code
 void updateTemperature()
 {
   Serial.println("Requesting temperature...");
   sensors.requestTemperatures();
   
-  // Simplified approach: just read the first sensor on the bus by index
   float tempC = sensors.getTempCByIndex(0);
   
-  // Check if reading is valid
   if (tempC != DEVICE_DISCONNECTED_C) {
     currentTemperature = tempC;
     Serial.print("Temperature: ");
@@ -263,21 +257,25 @@ void handleRoot()
   html += "    .then(data => {";
   html += "      const temp = document.getElementById('roomTemp');";
   html += "      if(data.roomTemperature > -100) {";
-  html += "        temp.innerText = data.roomTemperature.toFixed(1) + '\\u00B0C';";  // Unicode for degree symbol
+  html += "        temp.innerText = data.roomTemperature.toFixed(1) + '\\u00B0C';";
   html += "        temp.className = '';";
   html += "      } else {";
   html += "        temp.innerText = 'Sensor Error';";
   html += "        temp.className = 'error';";
   html += "      }";
+  // ====== UPDATED: show h m s ======
   html += "      const timerStatus = document.getElementById('timerStatus');";
   html += "      if(data.timerActive) {";
-  html += "        const hours = Math.floor(data.timerRemaining / 3600);";
-  html += "        const mins = Math.floor((data.timerRemaining % 3600) / 60);";
-  html += "        timerStatus.innerHTML = 'Timer: ' + hours + 'h ' + mins + 'm remaining';";
+  html += "        const total = Math.max(0, Math.floor(data.timerRemaining));"; // seconds
+  html += "        const hours = Math.floor(total / 3600);";
+  html += "        const mins = Math.floor((total % 3600) / 60);";
+  html += "        const secs = total % 60;";
+  html += "        timerStatus.innerHTML = 'Timer: ' + hours + 'h ' + mins + 'm ' + secs + 's remaining';";
   html += "        timerStatus.style.display = 'block';";
   html += "      } else {";
   html += "        timerStatus.style.display = 'none';";
   html += "      }";
+  // ====== /UPDATED ======
   html += "    });";
   html += "}";
   html += "function changeTemp() {";
@@ -304,7 +302,9 @@ void handleRoot()
   html += "    if (notification) notification.style.display = 'none';";
   html += "  }, 5000);";
   html += "};";
-  html += "setInterval(refreshTemp, 60000);"; // Refresh temp display every 60 seconds
+  // ====== UPDATED: refresh every 1s ======
+  html += "setInterval(refreshTemp, 1000);";
+  // ====== /UPDATED ======
   html += "</script>";
   html += "</head><body>";
   html += "<h1>Daikin AC Control</h1>";
@@ -318,14 +318,12 @@ void handleRoot()
   html += "<div class='sensor'>Room Temperature: <span id='roomTemp'>";
   if (currentTemperature > -100)
   {
-    html += String(currentTemperature, 1) + "&deg;C";  // HTML entity for degree symbol
+    html += String(currentTemperature, 1) + "&deg;C";
   } 
-  
   else
   {
     html += "<span class='error'>Sensor Error</span>";
   }
-
   html += "</span></div>";
   
   html += "<button class='refresh' onclick='location.href=\"/refresh_temp\"'>Refresh Temperature</button><br>";
@@ -339,11 +337,10 @@ void handleRoot()
   html += "<label for='tempSelect'>Select Temperature: </label>";
   html += "<select id='tempSelect' onchange='changeTemp()'>";
   
-  // Generate options from 18 to 28 degrees
   for (int t = 18; t <= 28; t++) 
   {
     html += "<option value='" + String(t) + "'";
-    if (t == acTemp) html += " selected";  // Pre-select the current temperature
+    if (t == acTemp) html += " selected";
     html += ">" + String(t) + "&deg;C</option>";
   }
   
@@ -355,7 +352,6 @@ void handleRoot()
   html += "<label for='fanSelect'>Select Fan Speed: </label>";
   html += "<select id='fanSelect' onchange='changeFan()'>";
   
-  // Fan speed options from 2 to 5
   html += "<option value='10'" + String(acFanSpeed == kDaikinFanAuto ? " selected" : "") + ">Auto</option>";
   for (int f = 2; f <= 5; f++) {
     html += "<option value='" + String(f) + "'";
@@ -372,11 +368,10 @@ void handleRoot()
   html += "<label for='timerSelect'>Auto-Off Timer: </label>";
   html += "<select id='timerSelect' onchange='setTimer()'>";
   
-  // Timer options
   html += "<option value='0'" + String(acTimerDuration == 0 ? " selected" : "") + ">No Timer</option>";
   for (int h = 1; h <= 4; h++) {
     html += "<option value='" + String(h) + "'";
-    if (acTimerDuration == h * 3600000) html += " selected";
+    if (acTimerDuration == (unsigned long)h * 3600000UL) html += " selected";
     html += ">" + String(h) + " Hour" + (h > 1 ? "s" : "") + "</option>";
   }
   
@@ -388,10 +383,14 @@ void handleRoot()
   // Show remaining time if timer is active
   html += "<p id='timerStatus' style='display: " + String(acTimerDuration > 0 && acPower ? "block" : "none") + ";'>";
   if (acTimerDuration > 0 && acPower) {
-    unsigned long remainingTime = acTimerDuration - (millis() - acTimerStart);
-    int remainingMins = (remainingTime / 60000) % 60;
-    int remainingHours = remainingTime / 3600000;
-    html += "Timer: " + String(remainingHours) + "h " + String(remainingMins) + "m remaining";
+    unsigned long elapsed = millis() - acTimerStart;
+    unsigned long remainingTime = (elapsed >= acTimerDuration) ? 0UL : (acTimerDuration - elapsed); // ms
+
+    int remainingHours = remainingTime / 3600000UL;
+    int remainingMins  = (remainingTime / 60000UL) % 60;
+    int remainingSecs  = (remainingTime / 1000UL) % 60;
+
+    html += "Timer: " + String(remainingHours) + "h " + String(remainingMins) + "m " + String(remainingSecs) + "s remaining";
   }
   html += "</p>";
   
@@ -464,19 +463,17 @@ void handleTimer()
   if (server.hasArg("value")) {
     int hours = server.arg("value").toInt();
     if (hours >= 0 && hours <= 4) {
-      // Store previous timer state to determine if there's a change
       unsigned long previousTimerDuration = acTimerDuration;
       
       if (hours == 0) {
         acTimerDuration = 0; // No timer
       } else {
-        acTimerDuration = hours * 3600000; // Convert hours to milliseconds
+        acTimerDuration = (unsigned long)hours * 3600000UL; // Convert hours to milliseconds
         if (acPower) {
           acTimerStart = millis(); // Start the timer if AC is on
         }
       }
       
-      // If there's a change in timer settings and AC is on, send the command
       if (previousTimerDuration != acTimerDuration && acPower) {
         sendAcCommand();
         String message = "Timer set for " + String(hours) + " hour" + (hours != 1 ? "s" : "");
@@ -491,13 +488,10 @@ void handleTimer()
 // Handle clearing timer
 void handleClearTimer()
 {
-  // Only need to notify if there was an active timer
   bool hadActiveTimer = (acTimerDuration > 0);
   
-  // Clear timer
   acTimerDuration = 0;
   
-  // If AC is on, send the command to ensure timer is cleared on the device
   if (acPower) {
     sendAcCommand();
   }
@@ -521,11 +515,10 @@ void handleStatus()
   json += "\"mode\":" + String(acMode) + ",";
   json += "\"fanSpeed\":" + String(acFanSpeed);
   
-  // Add timer information
   if (acTimerDuration > 0 && acPower) {
     unsigned long remainingTime = acTimerDuration - (millis() - acTimerStart);
     json += ",\"timerActive\":true";
-    json += ",\"timerRemaining\":" + String(remainingTime / 1000); // in seconds
+    json += ",\"timerRemaining\":" + String(remainingTime / 1000UL); // in seconds
   } else {
     json += ",\"timerActive\":false";
     json += ",\"timerRemaining\":0";
