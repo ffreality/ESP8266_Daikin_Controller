@@ -10,6 +10,10 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
+// LittleFS file serving
+#include <FS.h>
+#include <LittleFS.h>
+
 // OLED Display
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 32
@@ -49,9 +53,6 @@ IRDaikinESP ac(kIrLed);
 // Web server on port 80
 ESP8266WebServer server(80);
 
-// Message for notifications
-String notificationMessage = "";
-
 // Function to display IP address on OLED
 void displayIPAddress() {
   display.clearDisplay();
@@ -71,14 +72,20 @@ void setup()
   // Start serial
   Serial.begin(115200);
   delay(200);
-  
-  // Initialize the IR sender
+
+  // Initialize the IR sender & defaults
   ac.begin();
-  setDefaultSettings();
-  
+  ac.setFan(acFanSpeed);
+  ac.setMode(acMode);
+  ac.setTemp(acTemp);
+  ac.setSwingVertical(false);
+  ac.setSwingHorizontal(false);
+  ac.setQuiet(false);
+  ac.setPowerful(false);
+
   // Initialize OLED
   Wire.begin(OLED_SDA, OLED_SCL);
-  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println(F("SSD1306 allocation failed"));
   } else {
     display.clearDisplay();
@@ -89,44 +96,45 @@ void setup()
     display.println("Connecting to WiFi...");
     display.display();
   }
-  
-  // Initialize the temperature sensors - SIMPLIFIED approach
+
+  // Initialize the temperature sensor
   Serial.println("Initializing temperature sensor...");
   sensors.begin();
-  
-  // Get initial temperature reading
   updateTemperature();
-  
+
   // Connect to WiFi
   WiFi.begin(ssid, password);
   Serial.println("Connecting to WiFi");
-  
-  while (WiFi.status() != WL_CONNECTED)
-  {
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-
   Serial.println("");
   Serial.print("Connected to WiFi. IP address: ");
   Serial.println(WiFi.localIP());
-  
-  // Display IP address on OLED
+
+  // OLED IP
   displayIPAddress();
-  
-  // Define API endpoints
-  server.on("/", handleRoot);
+
+  // Mount LittleFS
+  if (!LittleFS.begin()) {
+    Serial.println("LittleFS mount failed");
+  } else {
+    Serial.println("LittleFS mounted");
+  }
+
+  // Routes
+  server.on("/", handleRoot);                 // now serves /index.html from LittleFS
   server.on("/on", handleOn);
   server.on("/off", handleOff);
   server.on("/temp", handleTemp);
-  server.on("/fan", handleFan);  // New endpoint for fan speed
-  server.on("/timer", handleTimer);  // New endpoint for timer
-  server.on("/clear_timer", handleClearTimer);  // New endpoint for clearing timer
+  server.on("/fan", handleFan);
+  server.on("/timer", handleTimer);
+  server.on("/clear_timer", handleClearTimer);
   server.on("/status", handleStatus);
   server.on("/refresh_temp", handleRefreshTemp);
-  server.on("/raw_temp", handleRawTemp);  // Added raw temperature endpoint for debugging
-  
-  // Start the server
+  server.on("/raw_temp", handleRawTemp);
+
   server.begin();
   Serial.println("HTTP server started");
 }
@@ -134,16 +142,15 @@ void setup()
 void loop()
 {
   server.handleClient();
-  
+
   // Update temperature reading every minute
   if (millis() - lastTempUpdate >= TEMP_UPDATE_INTERVAL) {
     updateTemperature();
   }
-  
-  // Check if timer is active and has expired
+
+  // Auto-off timer
   if (acTimerDuration > 0 && acPower) {
     if (millis() - acTimerStart >= acTimerDuration) {
-      // Timer expired, turn off the AC
       acPower = false;
       acTimerDuration = 0; // Reset timer
       sendAcCommand();
@@ -152,14 +159,26 @@ void loop()
   }
 }
 
+// ==== FILE-SERVED ROOT ====
+void handleRoot()
+{
+  File f = LittleFS.open("/index.html", "r");
+  if (!f) {
+    server.send(404, "text/plain", "index.html not found");
+    return;
+  }
+  server.streamFile(f, "text/html");
+  f.close();
+}
+
 // Update temperature from the DS1820/DS18B20 sensor
 void updateTemperature()
 {
   Serial.println("Requesting temperature...");
   sensors.requestTemperatures();
-  
+
   float tempC = sensors.getTempCByIndex(0);
-  
+
   if (tempC != DEVICE_DISCONNECTED_C) {
     currentTemperature = tempC;
     Serial.print("Temperature: ");
@@ -167,7 +186,7 @@ void updateTemperature()
   } else {
     Serial.println("Error: Could not read temperature data");
   }
-  
+
   lastTempUpdate = millis();
 }
 
@@ -184,7 +203,7 @@ void handleRawTemp()
 {
   sensors.requestTemperatures();
   float tempC = sensors.getTempCByIndex(0);
-  
+
   String json = "{\"raw_temp\":";
   json += String(tempC);
   json += ",\"device_status\":";
@@ -192,20 +211,8 @@ void handleRawTemp()
   json += ",\"device_count\":";
   json += String(sensors.getDeviceCount());
   json += "}";
-  
-  server.send(200, "application/json", json);
-}
 
-// Set default AC settings
-void setDefaultSettings()
-{
-  ac.setFan(acFanSpeed);
-  ac.setMode(acMode);
-  ac.setTemp(acTemp);
-  ac.setSwingVertical(false);
-  ac.setSwingHorizontal(false);
-  ac.setQuiet(false);
-  ac.setPowerful(false);
+  server.send(200, "application/json", json);
 }
 
 // Apply current settings and send IR command
@@ -215,7 +222,7 @@ void sendAcCommand()
   ac.setTemp(acTemp);
   ac.setFan(acFanSpeed);
   ac.send();
-  
+
   // Debug output
   Serial.println("Sending IR Command:");
   Serial.print("Power: ");
@@ -228,189 +235,15 @@ void sendAcCommand()
   Serial.println(acFanSpeed);
 }
 
-// Root page handler
-void handleRoot()
-{
-  String html = "<html><head>";
-  html += "<meta charset=\"UTF-8\">";
-  html += "<title>Daikin AC Control</title>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<style>";
-  html += "body { font-family: Arial, sans-serif; margin: 20px; text-align: center; background-color: black; color: white; }";
-  html += "button { background-color: #4CAF50; border: none; color: white; padding: 15px 32px; margin: 10px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; border-radius: 8px; }";
-  html += ".off { background-color: #f44336; }";
-  html += ".temp { background-color: #008CBA; }";
-  html += ".refresh { background-color: #FF9800; }";
-  html += ".clear { background-color: #9C27B0; }";
-  html += ".sensor { font-size: 1.2em; font-weight: bold; margin: 20px 0; padding: 10px; background-color: #333; border-radius: 5px; color: #fff; }";
-  html += ".error { color: #ff6b6b; }";
-  html += ".notification { background-color: #2196F3; color: white; padding: 10px; margin: 10px 0; border-radius: 5px; animation: fadeOut 5s forwards; }";
-  html += "select { padding: 10px; font-size: 16px; border-radius: 8px; background-color: #008CBA; color: white; margin: 10px; border: none; cursor: pointer; }";
-  html += "select:focus { outline: none; }";
-  html += ".temp-control, .fan-control, .timer-control { margin: 15px 0; }";
-  html += "@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; display: none; } }";
-  html += "</style>";
-  html += "<script>";
-  html += "function refreshTemp() {";
-  html += "  fetch('/status')";
-  html += "    .then(response => response.json())";
-  html += "    .then(data => {";
-  html += "      const temp = document.getElementById('roomTemp');";
-  html += "      if(data.roomTemperature > -100) {";
-  html += "        temp.innerText = data.roomTemperature.toFixed(1) + '\\u00B0C';";
-  html += "        temp.className = '';";
-  html += "      } else {";
-  html += "        temp.innerText = 'Sensor Error';";
-  html += "        temp.className = 'error';";
-  html += "      }";
-  // ====== UPDATED: show h m s ======
-  html += "      const timerStatus = document.getElementById('timerStatus');";
-  html += "      if(data.timerActive) {";
-  html += "        const total = Math.max(0, Math.floor(data.timerRemaining));"; // seconds
-  html += "        const hours = Math.floor(total / 3600);";
-  html += "        const mins = Math.floor((total % 3600) / 60);";
-  html += "        const secs = total % 60;";
-  html += "        timerStatus.innerHTML = 'Timer: ' + hours + 'h ' + mins + 'm ' + secs + 's remaining';";
-  html += "        timerStatus.style.display = 'block';";
-  html += "      } else {";
-  html += "        timerStatus.style.display = 'none';";
-  html += "      }";
-  // ====== /UPDATED ======
-  html += "    });";
-  html += "}";
-  html += "function changeTemp() {";
-  html += "  const temp = document.getElementById('tempSelect').value;";
-  html += "  location.href = '/temp?value=' + temp;";
-  html += "}";
-  html += "function changeFan() {";
-  html += "  const fan = document.getElementById('fanSelect').value;";
-  html += "  location.href = '/fan?value=' + fan;";
-  html += "}";
-  html += "function setTimer() {";
-  html += "  const timer = document.getElementById('timerSelect').value;";
-  html += "  location.href = '/timer?value=' + timer;";
-  html += "}";
-  html += "function clearTimer() {";
-  html += "  if (confirm('Are you sure you want to clear the timer?')) {";
-  html += "    location.href = '/clear_timer';";
-  html += "  }";
-  html += "}";
-  html += "window.onload = function() {";
-  html += "  refreshTemp();";
-  html += "  setTimeout(function() {";
-  html += "    const notification = document.getElementById('notification');";
-  html += "    if (notification) notification.style.display = 'none';";
-  html += "  }, 5000);";
-  html += "};";
-  // ====== UPDATED: refresh every 1s ======
-  html += "setInterval(refreshTemp, 1000);";
-  // ====== /UPDATED ======
-  html += "</script>";
-  html += "</head><body>";
-  html += "<h1>Daikin AC Control</h1>";
-  
-  // Display notification if available
-  if (notificationMessage.length() > 0) {
-    html += "<div id='notification' class='notification'>" + notificationMessage + "</div>";
-    notificationMessage = ""; // Clear the message after displaying it
-  }
-  
-  html += "<div class='sensor'>Room Temperature: <span id='roomTemp'>";
-  if (currentTemperature > -100)
-  {
-    html += String(currentTemperature, 1) + "&deg;C";
-  } 
-  else
-  {
-    html += "<span class='error'>Sensor Error</span>";
-  }
-  html += "</span></div>";
-  
-  html += "<button class='refresh' onclick='location.href=\"/refresh_temp\"'>Refresh Temperature</button><br>";
-  html += "<p>AC Status: " + String(acPower ? "ON" : "OFF") + "</p>";
-  html += "<p>Set Temperature: " + String(acTemp) + "&deg;C</p>";
-  html += "<button onclick='location.href=\"/on\"'>Turn ON</button>";
-  html += "<button class='off' onclick='location.href=\"/off\"'>Turn OFF</button><br>";
-  
-  // Temperature selection box
-  html += "<div class='temp-control'>";
-  html += "<label for='tempSelect'>Select Temperature: </label>";
-  html += "<select id='tempSelect' onchange='changeTemp()'>";
-  
-  for (int t = 18; t <= 28; t++) 
-  {
-    html += "<option value='" + String(t) + "'";
-    if (t == acTemp) html += " selected";
-    html += ">" + String(t) + "&deg;C</option>";
-  }
-  
-  html += "</select>";
-  html += "</div>";
-  
-  // Fan Speed selection box
-  html += "<div class='fan-control'>";
-  html += "<label for='fanSelect'>Select Fan Speed: </label>";
-  html += "<select id='fanSelect' onchange='changeFan()'>";
-  
-  html += "<option value='10'" + String(acFanSpeed == kDaikinFanAuto ? " selected" : "") + ">Auto</option>";
-  for (int f = 2; f <= 5; f++) {
-    html += "<option value='" + String(f) + "'";
-    if (f == acFanSpeed) html += " selected";
-    html += ">" + String(f) + "</option>";
-  }
-  html += "<option value='11'" + String(acFanSpeed == kDaikinFanQuiet ? " selected" : "") + ">Quiet</option>";
-  
-  html += "</select>";
-  html += "</div>";
-  
-  // Timer selection box
-  html += "<div class='timer-control'>";
-  html += "<label for='timerSelect'>Auto-Off Timer: </label>";
-  html += "<select id='timerSelect' onchange='setTimer()'>";
-  
-  html += "<option value='0'" + String(acTimerDuration == 0 ? " selected" : "") + ">No Timer</option>";
-  for (int h = 1; h <= 4; h++) {
-    html += "<option value='" + String(h) + "'";
-    if (acTimerDuration == (unsigned long)h * 3600000UL) html += " selected";
-    html += ">" + String(h) + " Hour" + (h > 1 ? "s" : "") + "</option>";
-  }
-  
-  html += "</select>";
-  
-  // Clear Timer button
-  html += "<button class='clear' onclick='clearTimer()'>Clear Timer</button>";
-  
-  // Show remaining time if timer is active
-  html += "<p id='timerStatus' style='display: " + String(acTimerDuration > 0 && acPower ? "block" : "none") + ";'>";
-  if (acTimerDuration > 0 && acPower) {
-    unsigned long elapsed = millis() - acTimerStart;
-    unsigned long remainingTime = (elapsed >= acTimerDuration) ? 0UL : (acTimerDuration - elapsed); // ms
-
-    int remainingHours = remainingTime / 3600000UL;
-    int remainingMins  = (remainingTime / 60000UL) % 60;
-    int remainingSecs  = (remainingTime / 1000UL) % 60;
-
-    html += "Timer: " + String(remainingHours) + "h " + String(remainingMins) + "m " + String(remainingSecs) + "s remaining";
-  }
-  html += "</p>";
-  
-  html += "</div>";
-  
-  html += "</body></html>";
-  
-  server.send(200, "text/html", html);
-}
-
 // Handle power on
 void handleOn()
 {
   acPower = true;
-  
-  // Reset timer start time if timer is active
+
   if (acTimerDuration > 0) {
     acTimerStart = millis();
   }
-  
+
   sendAcCommand();
   server.sendHeader("Location", "/");
   server.send(303);
@@ -430,7 +263,7 @@ void handleTemp()
 {
   if (server.hasArg("value")) {
     int temp = server.arg("value").toInt();
-    if (temp >= 18 && temp <= 30) {  // Typical Daikin temperature range
+    if (temp >= 18 && temp <= 30) {
       acTemp = temp;
       if (acPower) {
         sendAcCommand();
@@ -464,20 +297,19 @@ void handleTimer()
     int hours = server.arg("value").toInt();
     if (hours >= 0 && hours <= 4) {
       unsigned long previousTimerDuration = acTimerDuration;
-      
+
       if (hours == 0) {
         acTimerDuration = 0; // No timer
       } else {
-        acTimerDuration = (unsigned long)hours * 3600000UL; // Convert hours to milliseconds
+        acTimerDuration = (unsigned long)hours * 3600000UL; // Convert hours to ms
         if (acPower) {
-          acTimerStart = millis(); // Start the timer if AC is on
+          acTimerStart = millis(); // Start timer if AC is on
         }
       }
-      
+
       if (previousTimerDuration != acTimerDuration && acPower) {
         sendAcCommand();
         String message = "Timer set for " + String(hours) + " hour" + (hours != 1 ? "s" : "");
-        notificationMessage = message;
       }
     }
   }
@@ -489,17 +321,13 @@ void handleTimer()
 void handleClearTimer()
 {
   bool hadActiveTimer = (acTimerDuration > 0);
-  
+
   acTimerDuration = 0;
-  
+
   if (acPower) {
     sendAcCommand();
   }
-  
-  if (hadActiveTimer) {
-    notificationMessage = "Timer has been cleared";
-  }
-  
+
   Serial.println("Timer cleared");
   server.sendHeader("Location", "/");
   server.send(303);
@@ -514,7 +342,7 @@ void handleStatus()
   json += "\"roomTemperature\":" + String(currentTemperature) + ",";
   json += "\"mode\":" + String(acMode) + ",";
   json += "\"fanSpeed\":" + String(acFanSpeed);
-  
+
   if (acTimerDuration > 0 && acPower) {
     unsigned long remainingTime = acTimerDuration - (millis() - acTimerStart);
     json += ",\"timerActive\":true";
@@ -523,8 +351,8 @@ void handleStatus()
     json += ",\"timerActive\":false";
     json += ",\"timerRemaining\":0";
   }
-  
+
   json += "}";
-  
+
   server.send(200, "application/json", json);
 }

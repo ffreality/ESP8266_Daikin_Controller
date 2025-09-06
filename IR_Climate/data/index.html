@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Daikin AC Control</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; text-align: center; background-color: black; color: white; }
+    button { background-color: #4CAF50; border: none; color: white; padding: 15px 32px; margin: 10px; text-align: center; text-decoration: none; display: inline-block; font-size: 16px; border-radius: 8px; cursor: pointer; }
+    .off { background-color: #f44336; }
+    .temp { background-color: #008CBA; }
+    .refresh { background-color: #FF9800; }
+    .clear { background-color: #9C27B0; }
+    .sensor { font-size: 1.2em; font-weight: bold; margin: 20px 0; padding: 10px; background-color: #333; border-radius: 5px; color: #fff; }
+    .error { color: #ff6b6b; }
+    .notification { background-color: #2196F3; color: white; padding: 10px; margin: 10px 0; border-radius: 5px; animation: fadeOut 5s forwards; }
+    select { padding: 10px; font-size: 16px; border-radius: 8px; background-color: #008CBA; color: white; margin: 10px; border: none; cursor: pointer; }
+    select:focus { outline: none; }
+    .temp-control, .fan-control, .timer-control { margin: 15px 0; }
+    @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; display: none; } }
+  </style>
+  <script>
+    function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
+
+    function applyStatus(data) {
+      // Room temperature
+      const tempEl = document.getElementById('roomTemp');
+      if (data.roomTemperature > -100) {
+        tempEl.innerText = data.roomTemperature.toFixed(1) + '\u00B0C';
+        tempEl.className = '';
+      } else {
+        tempEl.innerText = 'Sensor Error';
+        tempEl.className = 'error';
+      }
+
+      // Power + set temperature
+      document.getElementById('acStatus').innerText = data.power ? 'ON' : 'OFF';
+      document.getElementById('setTemp').innerText = data.temperature + '\u00B0C';
+
+      // Dropdowns
+      document.getElementById('tempSelect').value = String(data.temperature);
+      document.getElementById('fanSelect').value = String(data.fanSpeed);
+
+      // Timer
+      const timerStatus = document.getElementById('timerStatus');
+      if (data.timerActive) {
+        const total = Math.max(0, Math.floor(data.timerRemaining));
+        const hours = Math.floor(total / 3600);
+        const mins  = Math.floor((total % 3600) / 60);
+        const secs  = total % 60;
+        timerStatus.innerHTML = 'Timer: ' + hours + 'h ' + mins + 'm ' + secs + 's remaining';
+        timerStatus.style.display = 'block';
+        document.getElementById('timerSelect').value = String(clamp(Math.ceil(total/3600), 1, 4));
+      } else {
+        timerStatus.style.display = 'none';
+        document.getElementById('timerSelect').value = '0';
+      }
+    }
+
+    function refreshTemp() {
+      fetch('/status', { cache: 'no-store' })
+        .then(r => r.json())
+        .then(applyStatus)
+        .catch(() => {});
+    }
+
+    function changeTemp() {
+      location.href = '/temp?value=' + document.getElementById('tempSelect').value;
+    }
+    function changeFan() {
+      location.href = '/fan?value=' + document.getElementById('fanSelect').value;
+    }
+    function setTimer() {
+      location.href = '/timer?value=' + document.getElementById('timerSelect').value;
+    }
+    function clearTimer() {
+      if (confirm('Are you sure you want to clear the timer?')) location.href = '/clear_timer';
+    }
+
+    window.onload = function() {
+      refreshTemp(); // fetch immediately
+      setTimeout(() => {
+        const notification = document.getElementById('notification');
+        if (notification) notification.style.display = 'none';
+      }, 5000);
+    };
+    setInterval(refreshTemp, 1000); // keep in sync every second
+  </script>
+</head>
+<body>
+  <h1>Daikin AC Control</h1>
+
+  <div class="sensor">
+    Room Temperature: <span id="roomTemp">--</span>
+  </div>
+
+  <button class="refresh" onclick="location.href='/refresh_temp'">Refresh Temperature</button><br>
+  <p>AC Status: <span id="acStatus">--</span></p>
+  <p>Set Temperature: <span id="setTemp">--</span></p>
+
+  <button onclick="location.href='/on'">Turn ON</button>
+  <button class="off" onclick="location.href='/off'">Turn OFF</button><br>
+
+  <div class="temp-control">
+    <label for="tempSelect">Select Temperature: </label>
+    <select id="tempSelect" onchange="changeTemp()">
+      <option value="18">18°C</option>
+      <option value="19">19°C</option>
+      <option value="20">20°C</option>
+      <option value="21">21°C</option>
+      <option value="22">22°C</option>
+      <option value="23">23°C</option>
+      <option value="24">24°C</option>
+      <option value="25">25°C</option>
+      <option value="26">26°C</option>
+      <option value="27">27°C</option>
+      <option value="28">28°C</option>
+    </select>
+  </div>
+
+  <div class="fan-control">
+    <label for="fanSelect">Select Fan Speed: </label>
+    <select id="fanSelect" onchange="changeFan()">
+      <option value="10">Auto</option>
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="11">Quiet</option>
+    </select>
+  </div>
+
+  <div class="timer-control">
+    <label for="timerSelect">Auto-Off Timer: </label>
+    <select id="timerSelect" onchange="setTimer()">
+      <option value="0">No Timer</option>
+      <option value="1">1 Hour</option>
+      <option value="2">2 Hours</option>
+      <option value="3">3 Hours</option>
+      <option value="4">4 Hours</option>
+    </select>
+    <button class="clear" onclick="clearTimer()">Clear Timer</button>
+    <p id="timerStatus" style="display: none;"></p>
+  </div>
+</body>
+</html>
